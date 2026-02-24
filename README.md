@@ -30,7 +30,7 @@ AIONU SDK for JavaScript/jQuery.
     - 참조 정보(Citation/Reference) 표시
 
 ## 사용 방법
-1. **jQuery 포함**: 프로젝트에 `jquery-3.7.1.min.js`를 포함합니다.
+1. **의존성 포함**: `jquery`, `eventsource.min.js` (IE11용 Polyfill), `marked.min.js` (Markdown 렌더링용)를 포함합니다.
 2. **SDK 포함**: `aionu-sdk.js`를 로드합니다.
 3. **초기화**:
    ```javascript
@@ -39,8 +39,16 @@ AIONU SDK for JavaScript/jQuery.
        apiKey: 'YOUR_API_KEY'
    });
    ```
-4. **채팅 호출**:
+4. **스트리밍 채팅 호출**:
    ```javascript
-   sdk.chat({ query: "안녕" }, function(res) { console.log(res.answer); });
+   sdk.chatStream({
+       query: "마크다운으로 코드 짜줘",
+       onMessage: function(delta, full) {
+           // 실시간으로 텍스트가 전달됨 (Markdown 렌더링 권장)
+           document.getElementById('display').innerHTML = marked.parse(full);
+       },
+       onFinished: function(full, data) {
+           console.log("종료", data.conversation_id);
+       }
+   });
    ```
-5. **초기화**: `sdk.refresh()` 호출 시 기존 `conversation_id`가 리셋됩니다.

@@ -1,6 +1,7 @@
 /**
  * AIONU JavaScript SDK
- * Supports IE11, Chrome, Edge
+ * Supports IE11 (via Polyfill), Chrome, Edge
+ * Features: SSE Streaming, Markdown Rendering
  */
 (function(window, $) {
     'use strict';
@@ -20,37 +21,69 @@
     };
 
     /**
-     * Send Message (Chat)
+     * Send Message with Streaming (SSE)
+     * @param {Object} params - { query, inputs, user, onMessage, onFinished, onError }
      */
-    AionUSDK.prototype.chat = function(params, successCallback, errorCallback) {
+    AionUSDK.prototype.chatStream = function(params) {
         var self = this;
-        var data = {
+        var url = this.endpoint + '/chat-messages';
+        
+        var body = {
             query: params.query,
             inputs: params.inputs || {},
             user: params.user || 'default_user',
             conversation_id: this.conversationId,
-            response_mode: 'blocking' // JS/jQuery usually handles blocking easier for IE11
+            response_mode: 'streaming'
         };
 
-        $.ajax({
-            url: this.endpoint + '/chat-messages',
-            type: 'POST',
-            auto: false,
+        // Use EventSourcePolyfill for Header support (Authorization) and IE11 compatibility
+        var es = new EventSourcePolyfill(url, {
             headers: {
                 'Authorization': 'Bearer ' + this.apiKey,
                 'Content-Type': 'application/json'
             },
-            data: JSON.stringify(data),
-            success: function(response) {
-                if (response.conversation_id) {
-                    self.conversationId = response.conversation_id;
-                }
-                if (successCallback) successCallback(response);
-            },
-            error: function(xhr, status, error) {
-                if (errorCallback) errorCallback(xhr, status, error);
-            }
+            method: 'POST',
+            body: JSON.stringify(body),
+            heartbeatTimeout: 60000
         });
+
+        var fullAnswer = '';
+
+        es.onmessage = function(event) {
+            try {
+                var data = JSON.parse(event.data);
+                
+                if (data.event === 'message' || data.event === 'agent_message') {
+                    fullAnswer += (data.answer || '');
+                    if (params.onMessage) {
+                        params.onMessage(data.answer, fullAnswer, data);
+                    }
+                } 
+                
+                if (data.event === 'message_end') {
+                    if (data.conversation_id) {
+                        self.conversationId = data.conversation_id;
+                    }
+                    es.close();
+                    if (params.onFinished) params.onFinished(fullAnswer, data);
+                }
+
+                if (data.event === 'error') {
+                    es.close();
+                    if (params.onError) params.onError(data);
+                }
+            } catch (e) {
+                console.error('Error parsing SSE data', e);
+            }
+        };
+
+        es.onerror = function(err) {
+            console.error('EventSource failed', err);
+            es.close();
+            if (params.onError) params.onError(err);
+        };
+
+        return es; // Return to allow manual closing if needed
     };
 
     // Export to window

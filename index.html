@@ -4,28 +4,32 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIONU SDK 채팅 예제</title>
+    <title>AIONU SDK 스트리밍 채팅 예제</title>
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
-        #chat-window { border: 1px solid #ccc; height: 400px; overflow-y: scroll; padding: 10px; background: #fff; margin-bottom: 10px; }
-        .mesg { margin-bottom: 10px; }
-        .user { color: blue; font-weight: bold; }
-        .ai { color: green; font-weight: bold; }
-        .ref { font-size: 0.85em; color: #666; background: #eee; padding: 5px; margin-top: 5px; display: block; }
+        #chat-window { border: 1px solid #ccc; height: 500px; overflow-y: scroll; padding: 10px; background: #fff; margin-bottom: 10px; }
+        .mesg { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .user { color: blue; font-weight: bold; display: block; margin-bottom: 5px; }
+        .ai { color: green; font-weight: bold; display: block; margin-bottom: 5px; }
+        .content { line-height: 1.5; }
+        .content p { margin: 5px 0; }
+        .content pre { background: #272822; color: #f8f8f2; padding: 10px; overflow-x: auto; border-radius: 5px; font-size: 0.9em; }
+        .content code { background: #eee; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        .ref { font-size: 0.85em; color: #666; background: #f9f9f9; padding: 8px; margin-top: 10px; border-left: 3px solid #ccc; }
         .input-area { display: flex; gap: 5px; }
-        input[type="text"] { flex: 1; padding: 8px; }
-        button { padding: 8px 15px; cursor: pointer; }
-        .config-area { margin-bottom: 20px; padding: 10px; border: 1px dashed #aaa; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; }
+        button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 3px; }
+        button:disabled { background: #ccc; }
+        .config-area { margin-bottom: 20px; padding: 10px; border: 1px dashed #aaa; background: #fff; }
     </style>
 </head>
 <body>
 
-    <h2>AIONU SDK 채팅 예제</h2>
+    <h2>AIONU SDK 스트리밍 예제</h2>
 
     <div class="config-area">
         <strong>설정:</strong>
         Endpoint: <span id="conf-endpoint"></span> | 
-        API Key: <span id="conf-key">****</span>
         <button onclick="refreshChat()">채팅 초기화 (Refresh)</button>
     </div>
 
@@ -34,17 +38,20 @@
     </div>
 
     <div class="input-area">
-        <input type="text" id="userInput" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
-        <button onclick="sendMessage()">전송</button>
+        <input type="text" id="userInput" placeholder="메시지를 입력하세요 (Markdown 지원)..." onkeypress="if(event.keyCode==13) sendMessage()">
+        <button id="sendBtn" onclick="sendMessage()">전송</button>
     </div>
 
-    <!-- jQuery 내장 파일 사용 -->
+    <!-- 1. Polyfills & Dependencies -->
+    <script src="eventsource.min.js"></script>
+    <script src="marked.min.js"></script>
     <script src="jquery-3.7.1.min.js"></script>
-    <!-- AIONU SDK -->
+    
+    <!-- 2. AIONU SDK -->
     <script src="aionu-sdk.js"></script>
 
     <script>
-        // 1. SDK 초기화
+        // SDK 초기화
         var sdk = new AionUSDK({
             endpoint: 'https://api.abclab.ktds.com/v1',
             apiKey: 'app-lH1oxhFjNCSxMv9Dsgxdhygh'
@@ -52,46 +59,75 @@
 
         $(document).ready(function() {
             $('#conf-endpoint').text(sdk.endpoint);
+            appendMessage('시스템', '준비되었습니다. 질문을 입력해 보세요.', true);
         });
 
-        function appendMessage(sender, text, isAi, metadata) {
-            var $msg = $('<div class="mesg"></div>');
-            $msg.append('<span class="' + (isAi ? 'ai' : 'user') + '">' + sender + ': </span>');
-            $msg.append('<span>' + text + '</span>');
-            
-            // 참조 정보 표시 (있을 경우)
-            if (metadata && metadata.retriever_resources && metadata.retriever_resources.length > 0) {
-                var $ref = $('<div class="ref"><strong>참조:</strong> </div>');
-                $.each(metadata.retriever_resources, function(i, res) {
-                    $ref.append('<div>[' + (i+1) + '] ' + (res.content || res.title || '출처').substring(0, 100) + '...</div>');
-                });
-                $msg.append($ref);
-            }
+        // 결과물 렌더링 함수 (Markdown 적용)
+        function renderMarkdown(text) {
+            return marked.parse(text);
+        }
 
+        function appendMessage(sender, text, isAi) {
+            var id = 'msg-' + new Date().getTime();
+            var $msg = $('<div class="mesg"></div>');
+            $msg.append('<span class="' + (isAi ? 'ai' : 'user') + '">' + sender + '</span>');
+            $msg.append('<div class="content" id="' + id + '">' + (isAi ? renderMarkdown(text) : text) + '</div>');
+            
             $('#chat-window').append($msg);
+            scrollBottom();
+            return id;
+        }
+
+        function scrollBottom() {
             var cw = document.getElementById('chat-window');
             cw.scrollTop = cw.scrollHeight;
         }
 
         function sendMessage() {
-            var input = document.getElementById('userInput');
-            var query = input.val ? $(input).val() : input.value;
-            if (!query) return;
+            var $input = $('#userInput');
+            var $btn = $('#sendBtn');
+            var query = $input.val();
+            
+            if (!query || $btn.prop('disabled')) return;
 
             appendMessage('나', query, false);
-            input.value = '';
+            $input.val('');
+            $btn.prop('disabled', true);
 
-            // 2. SDK 채팅 함수 호출
-            sdk.chat({
+            // AI 메시지 자리를 미리 만들고 ID 확보
+            var aiMsgId = appendMessage('AI', '...', true);
+            var $aiContent = $('#' + aiMsgId);
+            var currentFullText = '';
+
+            // SDK 스트리밍 호출
+            sdk.chatStream({
                 query: query,
-                inputs: { "username": "주인님" }, // 변수 처리 예제
-                user: "test-user"
-            }, function(res) {
-                // 성공 콜백
-                appendMessage('AI', res.answer, true, res.metadata);
-            }, function(err) {
-                // 에러 콜백
-                appendMessage('Error', 'API 호출 중 오류가 발생했습니다.', true);
+                inputs: { "username": "주인님" },
+                user: "test-user",
+                onMessage: function(delta, full) {
+                    currentFullText = full;
+                    // 실시간 마크다운 렌더링
+                    $aiContent.html(renderMarkdown(currentFullText));
+                    scrollBottom();
+                },
+                onFinished: function(full, data) {
+                    $btn.prop('disabled', false);
+                    
+                    // 참조 정보 표시
+                    if (data.metadata && data.metadata.retriever_resources && data.metadata.retriever_resources.length > 0) {
+                        var html = '<div class="ref"><strong>참조 정보:</strong><ul>';
+                        $.each(data.metadata.retriever_resources, function(i, res) {
+                            html += '<li>' + (res.content || res.title || '출처').substring(0, 150) + '...</li>';
+                        });
+                        html += '</ul></div>';
+                        $aiContent.closest('.mesg').append(html);
+                        scrollBottom();
+                    }
+                },
+                onError: function(err) {
+                    $btn.prop('disabled', false);
+                    $aiContent.html('<span style="color:red;">오류가 발생했습니다.</span>');
+                }
             });
         }
 
