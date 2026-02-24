@@ -1,7 +1,7 @@
 /**
  * AIONU JavaScript SDK
- * Supports IE11 (via Polyfill), Chrome, Edge
- * Features: SSE Streaming, Markdown Rendering
+ * Supports IE11, Chrome, Edge
+ * Features: Manual XHR Streaming (POST support), Markdown Rendering
  */
 (function(window, $) {
     'use strict';
@@ -21,7 +21,8 @@
     };
 
     /**
-     * Send Message with Streaming (SSE)
+     * Send Message with Streaming (XHR Manual Implementation)
+     * Supports POST with Body and Headers in IE11+
      * @param {Object} params - { query, inputs, user, onMessage, onFinished, onError }
      */
     AionUSDK.prototype.chatStream = function(params) {
@@ -36,54 +37,65 @@
             response_mode: 'streaming'
         };
 
-        // Use EventSourcePolyfill for Header support (Authorization) and IE11 compatibility
-        var es = new EventSourcePolyfill(url, {
-            headers: {
-                'Authorization': 'Bearer ' + this.apiKey,
-                'Content-Type': 'application/json'
-            },
-            method: 'POST',
-            body: JSON.stringify(body),
-            heartbeatTimeout: 60000
-        });
-
+        var xhr = new XMLHttpRequest();
+        var seenBytes = 0;
         var fullAnswer = '';
 
-        es.onmessage = function(event) {
-            try {
-                var data = JSON.parse(event.data);
-                
-                if (data.event === 'message' || data.event === 'agent_message') {
-                    fullAnswer += (data.answer || '');
-                    if (params.onMessage) {
-                        params.onMessage(data.answer, fullAnswer, data);
-                    }
-                } 
-                
-                if (data.event === 'message_end') {
-                    if (data.conversation_id) {
-                        self.conversationId = data.conversation_id;
-                    }
-                    es.close();
-                    if (params.onFinished) params.onFinished(fullAnswer, data);
-                }
+        xhr.open('POST', url, true);
+        xhr.setRequestHeader('Authorization', 'Bearer ' + this.apiKey);
+        xhr.setRequestHeader('Content-Type', 'application/json');
 
-                if (data.event === 'error') {
-                    es.close();
-                    if (params.onError) params.onError(data);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 3 || xhr.readyState === 4) {
+                var newData = xhr.responseText.substring(seenBytes);
+                seenBytes = xhr.responseText.length;
+
+                // Process chunks
+                var lines = newData.split('\n');
+                $.each(lines, function(i, line) {
+                    if (line.indexOf('data: ') === 0) {
+                        try {
+                            var data = JSON.parse(line.substring(6));
+                            
+                            if (data.event === 'message' || data.event === 'agent_message') {
+                                fullAnswer += (data.answer || '');
+                                if (params.onMessage) {
+                                    params.onMessage(data.answer, fullAnswer, data);
+                                }
+                            } 
+                            
+                            if (data.event === 'message_end') {
+                                if (data.conversation_id) {
+                                    self.conversationId = data.conversation_id;
+                                }
+                            }
+
+                            if (data.event === 'error') {
+                                if (params.onError) params.onError(data);
+                            }
+                        } catch (e) {
+                            // Chunk might be incomplete
+                        }
+                    }
+                });
+            }
+
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    if (params.onFinished) params.onFinished(fullAnswer);
+                } else {
+                    if (params.onError) params.onError({ status: xhr.status, message: xhr.responseText });
                 }
-            } catch (e) {
-                console.error('Error parsing SSE data', e);
             }
         };
 
-        es.onerror = function(err) {
-            console.error('EventSource failed', err);
-            es.close();
+        xhr.onerror = function(err) {
             if (params.onError) params.onError(err);
         };
 
-        return es; // Return to allow manual closing if needed
+        xhr.send(JSON.stringify(body));
+
+        return xhr;
     };
 
     // Export to window
