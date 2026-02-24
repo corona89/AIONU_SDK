@@ -1,7 +1,8 @@
 /**
  * AIONU JavaScript SDK
  * Supports IE11, Chrome, Edge
- * Features: Robust XHR Streaming with Buffer, Markdown Rendering, Parameters & Suggestions
+ * Features: Robust XHR Manual Streaming, Markdown Rendering, Parameters & Suggestions
+ * (Fixed for Streaming Parse Robustness)
  */
 (function(window, $) {
     'use strict';
@@ -26,7 +27,6 @@
             data: data ? JSON.stringify(data) : null,
             success: successCallback,
             error: function(xhr, status, error) {
-                console.error('AIONU SDK Request Error:', status, error, xhr.responseText);
                 if (errorCallback) errorCallback(xhr, status, error);
             }
         });
@@ -46,7 +46,7 @@
     };
 
     /**
-     * Robust Streaming with Buffer
+     * Enhanced Robust Streaming
      */
     AionUSDK.prototype.chatStream = function(params) {
         var self = this;
@@ -62,78 +62,72 @@
 
         var xhr = new XMLHttpRequest();
         var seenBytes = 0;
-        var lineBuffer = ''; // <--- Essential for chunked data
         var fullAnswer = '';
+        var lineBuffer = '';
 
         xhr.open('POST', url, true);
         xhr.setRequestHeader('Authorization', 'Bearer ' + this.apiKey);
         xhr.setRequestHeader('Content-Type', 'application/json');
 
         xhr.onreadystatechange = function() {
-            // Handle HTTP errors (4xx, 5xx)
+            // Early Error Check
             if (xhr.readyState >= 2 && xhr.status >= 400) {
-                if (params.onError) {
-                    var errorData;
-                    try { errorData = JSON.parse(xhr.responseText); } catch(e) { errorData = { message: xhr.statusText }; }
-                    params.onError({ status: xhr.status, message: errorData.message || xhr.responseText });
-                }
+                var errJson;
+                try { errJson = JSON.parse(xhr.responseText); } catch(e) { errJson = { message: xhr.statusText || '서버 응답 오류' }; }
+                if (params.onError) params.onError(errJson);
                 xhr.abort();
                 return;
             }
 
             if (xhr.readyState === 3 || xhr.readyState === 4) {
-                var newData = xhr.responseText.substring(seenBytes);
-                seenBytes = xhr.responseText.length;
+                var responseText = xhr.responseText;
+                var newData = responseText.substring(seenBytes);
+                seenBytes = responseText.length;
                 
                 lineBuffer += newData;
                 var lines = lineBuffer.split('\n');
-                lineBuffer = lines.pop(); // Keep partial line in buffer
+                lineBuffer = lines.pop(); // Last incomplete line
 
-                $.each(lines, function(i, line) {
-                    line = $.trim(line);
-                    if (!line || line.indexOf('data: ') !== 0) return;
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].replace(/^\s+|\s+$/g, '');
+                    if (!line) continue;
                     
-                    try {
-                        var data = JSON.parse(line.substring(6));
-                        
-                        if (data.event === 'message' || data.event === 'agent_message') {
-                            var delta = data.answer || '';
-                            if (delta) {
-                                fullAnswer += delta;
-                                if (params.onMessage) params.onMessage(delta, fullAnswer, data);
+                    if (line.indexOf('data: ') === 0) {
+                        var jsonStr = line.substring(6);
+                        try {
+                            var data = JSON.parse(jsonStr);
+                            
+                            // Streaming Error
+                            if (data.event === 'error') {
+                                if (params.onError) params.onError(data);
+                                xhr.abort();
+                                break;
                             }
-                        } 
-                        
-                        if (data.event === 'message_end') {
-                            if (data.conversation_id) self.conversationId = data.conversation_id;
-                            if (params.onFinished) params.onFinished(fullAnswer, data);
-                        }
 
-                        if (data.event === 'error') {
-                            if (params.onError) params.onError(data);
+                            // Message Delta
+                            if (data.event === 'message' || data.event === 'agent_message') {
+                                var delta = data.answer || '';
+                                if (delta) {
+                                    fullAnswer += delta;
+                                    if (params.onMessage) params.onMessage(delta, fullAnswer, data);
+                                }
+                            } 
+                            
+                            // End
+                            if (data.event === 'message_end') {
+                                if (data.conversation_id) self.conversationId = data.conversation_id;
+                                if (params.onFinished) params.onFinished(fullAnswer, data);
+                            }
+                        } catch (e) {
+                            // Partial JSON, skip or wait next chunk
                         }
-                    } catch (e) {
-                        console.warn('SDK: Failed to parse line', line, e);
                     }
-                });
-            }
-
-            if (xhr.readyState === 4 && xhr.status < 400 && xhr.status !== 0) {
-                // If the connection closed but some data was left in buffer
-                if (lineBuffer && lineBuffer.indexOf('data: ') === 0) {
-                    try {
-                        var data = JSON.parse(lineBuffer.substring(6));
-                        if (data.event === 'message_end') {
-                           if (params.onFinished) params.onFinished(fullAnswer, data);
-                        }
-                    } catch(e) {}
                 }
             }
         };
 
-        xhr.onerror = function(err) {
-            console.error('SDK: Network Error', err);
-            if (params.onError) params.onError({ message: '네트워크 연결 오류 혹은 CORS 차단' });
+        xhr.onerror = function() {
+            if (params.onError) params.onError({ message: '네트워크 연결 오류 혹은 CORS 차단입니다. (로컬 서버 권장)' });
         };
 
         xhr.send(JSON.stringify(body));

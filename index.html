@@ -4,46 +4,43 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIONU SDK 고급 예제 (Parameters & Suggestions)</title>
+    <title>AIONU SDK - 연결 디버깅 모드</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f0f2f5; }
+        body { font-family: -apple-system, sans-serif; margin: 20px; background: #fafafa; }
         .container { max-width: 800px; margin: 0 auto; }
-        #chat-window { border: 1px solid #ddd; height: 500px; overflow-y: auto; padding: 15px; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 10px; }
-        .mesg { margin-bottom: 20px; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .user-tag { color: #1a73e8; font-weight: bold; font-size: 0.9em; display: block; margin-bottom: 4px; }
-        .ai-tag { color: #1e8e3e; font-weight: bold; font-size: 0.9em; display: block; margin-bottom: 4px; }
-        .content { line-height: 1.6; color: #333; }
-        .content p { margin: 8px 0; }
-        .content pre { background: #282c34; color: #abb2bf; padding: 12px; border-radius: 6px; overflow-x: auto; font-family: "Fira Code", monospace; font-size: 0.9em; }
-        .ref { font-size: 0.85em; color: #555; background: #fff3e0; padding: 10px; margin-top: 10px; border-radius: 4px; border-left: 4px solid #ff9800; }
-        .suggestion-box { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
-        .suggestion-item { background: #fff; border: 1px solid #1a73e8; color: #1a73e8; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 0.85em; transition: all 0.2s; }
-        .suggestion-item:hover { background: #1a73e8; color: #fff; }
-        .input-area { display: flex; gap: 8px; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        input[type="text"] { flex: 1; padding: 12px; border: 1px solid #ced4da; border-radius: 4px; outline: none; }
-        input[type="text"]:focus { border-color: #1a73e8; }
-        button { padding: 10px 24px; cursor: pointer; background: #1a73e8; color: white; border: none; border-radius: 4px; font-weight: bold; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .config-area { margin-bottom: 20px; padding: 12px; background: #fff; border-radius: 8px; border-left: 4px solid #1a73e8; font-size: 0.9em; }
-        .error-toast { color: #d93025; background: #fce8e6; padding: 10px; border-radius: 4px; margin-top: 10px; display: none; }
+        #chat-window { border: 1px solid #ddd; height: 450px; overflow-y: auto; padding: 15px; background: #fff; border-radius: 8px; margin-bottom: 10px; }
+        .mesg { margin-bottom: 15px; }
+        .user-tag { color: #007bff; font-weight: bold; }
+        .ai-tag { color: #28a745; font-weight: bold; }
+        .content { margin-top: 5px; line-height: 1.6; }
+        .input-area { display: flex; gap: 8px; }
+        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+        .suggestion-box { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
+        .suggestion-item { background: #e7f3ff; color: #007bff; padding: 5px 12px; border-radius: 20px; cursor: pointer; font-size: 0.9em; }
+        .cors-warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 0.9em; border: 1px solid #ffeeba; }
+        .error-log { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-top: 10px; font-size: 0.85em; display: none; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h2>AIONU SDK 고급 예제</h2>
+        <h2>AIONU SDK 디버깅 예제</h2>
 
-        <div class="config-area">
-            <strong>상태:</strong> <span id="status-text">서버 연결 확인 중...</span>
-            <button onclick="refreshChat()" style="float: right; padding: 4px 12px; font-size: 0.8em;">초기화</button>
+        <div id="protocol-warning" class="cors-warning" style="display:none;">
+            ⚠️ <strong>경고:</strong> 현재 브라우저가 파일을 직접 열고 있습니다 (file://). <br>
+            API 호출 시 CORS 오류가 발생할 수 있습니다. <code>python3 -m http.server</code> 등으로 실행하세요.
+        </div>
+
+        <div id="status-bar" style="font-size: 0.9em; margin-bottom: 10px; color: #666;">
+            상태: <span id="status-text">대기 중...</span>
         </div>
 
         <div id="chat-window"></div>
-        <div id="error-display" class="error-toast"></div>
+        <div id="error-log" class="error-log"></div>
 
         <div class="input-area">
-            <input type="text" id="userInput" placeholder="질문을 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
+            <input type="text" id="userInput" placeholder="메시지를 입력하세요 (예: 보험 가입 절차)" onkeypress="if(event.keyCode==13) sendMessage()">
             <button id="sendBtn" onclick="sendMessage()">전송</button>
         </div>
     </div>
@@ -53,113 +50,78 @@
     <script src="aionu-sdk.js"></script>
 
     <script>
+        // Check protocol
+        if (window.location.protocol === 'file:') {
+            document.getElementById('protocol-warning').style.display = 'block';
+        }
+
         var sdk = new AionUSDK({
             endpoint: 'https://api.abclab.ktds.com/v1',
             apiKey: 'app-lH1oxhFjNCSxMv9Dsgxdhygh'
         });
 
         $(document).ready(function() {
-            // 초기 파라미터 로드
             sdk.getParameters(function(res) {
-                $('#status-text').text('연결 성공').css('color', 'green');
+                $('#status-text').text('서버 연결 성공').css('color', 'green');
                 if (res.opening_statement) appendMessage('AI', res.opening_statement, true);
                 if (res.suggested_questions) showSuggestions(res.suggested_questions);
             }, function(xhr) {
-                $('#status-text').text('연결 실패 (CORS 혹은 Key 오류)').css('color', 'red');
-                showError('초기화 에러: ' + xhr.status + ' ' + xhr.statusText + '\n' + xhr.responseText);
+                $('#status-text').text('연결 오류 (API Key 혹은 CORS 확인)').css('color', 'red');
             });
         });
 
-        function showError(msg) {
-            $('#error-display').text(msg).fadeIn().delay(5000).fadeOut();
-        }
-
-        function renderMarkdown(text) { 
-            try { return marked.parse(text); } catch(e) { return text; }
-        }
-
         function appendMessage(sender, text, isAi) {
-            var id = 'msg-' + Math.random().toString(36).substr(2, 9);
-            var $msg = $('<div class="mesg"></div>');
-            $msg.append('<span class="' + (isAi ? 'ai-tag' : 'user-tag') + '">' + sender + '</span>');
-            $msg.append('<div class="content" id="' + id + '">' + (isAi ? renderMarkdown(text) : text) + '</div>');
-            $('#chat-window').append($msg);
-            scrollBottom();
-            return id;
+            var msgId = 'm-' + Math.random().toString(36).substr(2, 5);
+            var html = '<div class="mesg"><span class="' + (isAi?'ai-tag':'user-tag') + '">' + sender + '</span>';
+            html += '<div class="content" id="' + msgId + '">' + (isAi ? marked.parse(text) : text) + '</div></div>';
+            $('#chat-window').append(html);
+            $('#chat-window').scrollTop($('#chat-window')[0].scrollHeight);
+            return msgId;
         }
 
-        function scrollBottom() {
-            var cw = document.getElementById('chat-window');
-            $(cw).animate({ scrollTop: cw.scrollHeight }, 300);
-        }
-
-        function showSuggestions(questions) {
+        function showSuggestions(qs) {
             $('.suggestion-box').remove();
-            if (!questions || questions.length === 0) return;
-
             var $box = $('<div class="suggestion-box"></div>');
-            $.each(questions, function(i, q) {
-                var $item = $('<div class="suggestion-item"></div>').text(q);
-                $item.on('click', function() {
-                    $('#userInput').val(q);
-                    sendMessage();
-                });
-                $box.append($item);
+            $.each(qs, function(i, q) {
+                $('<div class="suggestion-item"></div>').text(q).on('click', function() {
+                    $('#userInput').val(q); sendMessage();
+                }).appendTo($box);
             });
             $('#chat-window').append($box);
-            scrollBottom();
         }
 
         function sendMessage() {
             var $input = $('#userInput');
-            var $btn = $('#sendBtn');
             var query = $.trim($input.val());
-            
-            if (!query || $btn.prop('disabled')) return;
+            if (!query || $('#sendBtn').prop('disabled')) return;
 
-            $('.suggestion-box').remove(); 
+            $('#error-log').hide();
             appendMessage('나', query, false);
             $input.val('');
-            $btn.prop('disabled', true);
+            $('#sendBtn').prop('disabled', true);
 
             var aiMsgId = appendMessage('AI', '...', true);
-            var $aiContent = $('#' + aiMsgId);
-            
+            var $aiDiv = $('#' + aiMsgId);
+
             sdk.chatStream({
                 query: query,
-                inputs: { "username": "주인님" },
                 onMessage: function(delta, full) {
-                    $aiContent.html(renderMarkdown(full));
+                    $aiDiv.html(marked.parse(full));
+                    $('#chat-window').scrollTop($('#chat-window')[0].scrollHeight);
                 },
                 onFinished: function(full, data) {
-                    $btn.prop('disabled', false);
-                    if (data && data.message_id) {
+                    $('#sendBtn').prop('disabled', false);
+                    if (data.message_id) {
                         sdk.getSuggested(data.message_id, function(s) { if(s.data) showSuggestions(s.data); });
                     }
-                    if (data && data.metadata && data.metadata.retriever_resources) {
-                        var html = '<div class="ref"><strong>참조:</strong><ul>';
-                        $.each(data.metadata.retriever_resources, function(i, r) {
-                            html += '<li>' + (r.content || r.title || '출처').substring(0, 100) + '...</li>';
-                        });
-                        html += '</ul></div>';
-                        $aiContent.closest('.mesg').append(html);
-                    }
-                    scrollBottom();
                 },
                 onError: function(err) {
-                    $btn.prop('disabled', false);
-                    var detail = err.message || JSON.stringify(err);
-                    $aiContent.html('<span style="color:red;">오류 발생: ' + detail + '</span>');
-                    showError('스트리밍 오류: ' + detail);
+                    $('#sendBtn').prop('disabled', false);
+                    var msg = err.message || JSON.stringify(err);
+                    $('#error-log').text('에러 상세 정보:\n' + msg).show();
+                    $aiDiv.html('<span style="color:red;">오류 발생 (상세 로그 참조)</span>');
                 }
             });
-        }
-
-        function refreshChat() {
-            sdk.refresh();
-            $('#chat-window').empty();
-            $('#status-text').text('초기화됨');
-            $(document).ready();
         }
     </script>
 </body>
