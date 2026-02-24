@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIONU SDK 채팅 예제</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
+        #chat-window { border: 1px solid #ccc; height: 400px; overflow-y: scroll; padding: 10px; background: #fff; margin-bottom: 10px; }
+        .mesg { margin-bottom: 10px; }
+        .user { color: blue; font-weight: bold; }
+        .ai { color: green; font-weight: bold; }
+        .ref { font-size: 0.85em; color: #666; background: #eee; padding: 5px; margin-top: 5px; display: block; }
+        .input-area { display: flex; gap: 5px; }
+        input[type="text"] { flex: 1; padding: 8px; }
+        button { padding: 8px 15px; cursor: pointer; }
+        .config-area { margin-bottom: 20px; padding: 10px; border: 1px dashed #aaa; }
+    </style>
+</head>
+<body>
+
+    <h2>AIONU SDK 채팅 예제</h2>
+
+    <div class="config-area">
+        <strong>설정:</strong>
+        Endpoint: <span id="conf-endpoint"></span> | 
+        API Key: <span id="conf-key">****</span>
+        <button onclick="refreshChat()">채팅 초기화 (Refresh)</button>
+    </div>
+
+    <div id="chat-window">
+        <!-- 대화 내용 출력 -->
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="userInput" placeholder="메시지를 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
+        <button onclick="sendMessage()">전송</button>
+    </div>
+
+    <!-- jQuery 내장 파일 사용 -->
+    <script src="jquery-3.7.1.min.js"></script>
+    <!-- AIONU SDK -->
+    <script src="aionu-sdk.js"></script>
+
+    <script>
+        // 1. SDK 초기화
+        var sdk = new AionUSDK({
+            endpoint: 'https://api.abclab.ktds.com/v1',
+            apiKey: 'app-lH1oxhFjNCSxMv9Dsgxdhygh'
+        });
+
+        $(document).ready(function() {
+            $('#conf-endpoint').text(sdk.endpoint);
+        });
+
+        function appendMessage(sender, text, isAi, metadata) {
+            var $msg = $('<div class="mesg"></div>');
+            $msg.append('<span class="' + (isAi ? 'ai' : 'user') + '">' + sender + ': </span>');
+            $msg.append('<span>' + text + '</span>');
+            
+            // 참조 정보 표시 (있을 경우)
+            if (metadata && metadata.retriever_resources && metadata.retriever_resources.length > 0) {
+                var $ref = $('<div class="ref"><strong>참조:</strong> </div>');
+                $.each(metadata.retriever_resources, function(i, res) {
+                    $ref.append('<div>[' + (i+1) + '] ' + (res.content || res.title || '출처').substring(0, 100) + '...</div>');
+                });
+                $msg.append($ref);
+            }
+
+            $('#chat-window').append($msg);
+            var cw = document.getElementById('chat-window');
+            cw.scrollTop = cw.scrollHeight;
+        }
+
+        function sendMessage() {
+            var input = document.getElementById('userInput');
+            var query = input.val ? $(input).val() : input.value;
+            if (!query) return;
+
+            appendMessage('나', query, false);
+            input.value = '';
+
+            // 2. SDK 채팅 함수 호출
+            sdk.chat({
+                query: query,
+                inputs: { "username": "주인님" }, // 변수 처리 예제
+                user: "test-user"
+            }, function(res) {
+                // 성공 콜백
+                appendMessage('AI', res.answer, true, res.metadata);
+            }, function(err) {
+                // 에러 콜백
+                appendMessage('Error', 'API 호출 중 오류가 발생했습니다.', true);
+            });
+        }
+
+        function refreshChat() {
+            sdk.refresh();
+            $('#chat-window').empty();
+            appendMessage('시스템', '대화가 초기화되었습니다.', true);
+        }
+    </script>
+</body>
+</html>
