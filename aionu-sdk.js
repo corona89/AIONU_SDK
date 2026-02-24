@@ -40,8 +40,8 @@
      * Get Suggested Questions after a message
      */
     AionUSDK.prototype.getSuggested = function(messageId, successCallback, errorCallback) {
-        // Based on Dify/AIONU standard: GET /messages/{message_id}/suggested
-        this._request('GET', '/messages/' + messageId + '/suggested', null, successCallback, errorCallback);
+        // Updated path: /messages/{message_id}/suggested-questions
+        this._request('GET', '/messages/' + messageId + '/suggested-questions', null, successCallback, errorCallback);
     };
 
     /**
@@ -76,6 +76,13 @@
         xhr.setRequestHeader('Content-Type', 'application/json');
 
         xhr.onreadystatechange = function() {
+            // Check status for error handling as soon as possible
+            if (xhr.status >= 400) {
+                if (params.onError) params.onError({ status: xhr.status, message: xhr.responseText });
+                xhr.abort();
+                return;
+            }
+
             if (xhr.readyState === 3 || xhr.readyState === 4) {
                 var newData = xhr.responseText.substring(seenBytes);
                 seenBytes = xhr.responseText.length;
@@ -86,10 +93,15 @@
                         try {
                             var data = JSON.parse(line.substring(6));
                             
+                            // AIONU can use agent_message or message
                             if (data.event === 'message' || data.event === 'agent_message') {
-                                fullAnswer += (data.answer || '');
-                                if (params.onMessage) {
-                                    params.onMessage(data.answer, fullAnswer, data);
+                                // Important: delta answer is in data.answer
+                                var delta = data.answer || '';
+                                if (delta) {
+                                    fullAnswer += delta;
+                                    if (params.onMessage) {
+                                        params.onMessage(delta, fullAnswer, data);
+                                    }
                                 }
                             } 
                             
@@ -106,12 +118,6 @@
                         } catch (e) { }
                     }
                 });
-            }
-
-            if (xhr.readyState === 4) {
-                if (xhr.status < 200 || xhr.status >= 300) {
-                    if (params.onError) params.onError({ status: xhr.status, message: xhr.responseText });
-                }
             }
         };
 
