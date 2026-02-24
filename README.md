@@ -30,4 +30,17 @@ AIONU SDK for JavaScript/jQuery.
     - 참조 정보(Citation/Reference) 표시
 
 ## 사용 방법
-*(개발 진행에 따라 업데이트 예정)*
+1. **jQuery 포함**: 프로젝트에 `jquery-3.7.1.min.js`를 포함합니다.
+2. **SDK 포함**: `aionu-sdk.js`를 로드합니다.
+3. **초기화**:
+   ```javascript
+   var sdk = new AionUSDK({
+       endpoint: 'https://api.abclab.ktds.com/v1',
+       apiKey: 'YOUR_API_KEY'
+   });
+   ```
+4. **채팅 호출**:
+   ```javascript
+   sdk.chat({ query: "안녕" }, function(res) { console.log(res.answer); });
+   ```
+5. **초기화**: `sdk.refresh()` 호출 시 기존 `conversation_id`가 리셋됩니다.
