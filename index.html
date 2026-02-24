@@ -28,7 +28,7 @@
 
     <div class="config-area">
         <strong>앱 설정 (Parameters):</strong>
-        <span id="opening-msg">로딩 중...</span>
+        <span id="opening-msg">연동 확인 중...</span>
         <button onclick="refreshChat()">채팅 초기화</button>
     </div>
 
@@ -50,24 +50,28 @@
         });
 
         $(document).ready(function() {
-            // 1. 초기 파라미터 가져오기 (Opening Statement & Initial Suggestions)
-            sdk.getParameters(function(res) {
-                $('#opening-msg').text('연결됨');
-                if (res.opening_statement) {
-                    appendMessage('AI', res.opening_statement, true);
-                }
-                if (res.suggested_questions) {
-                    showSuggestions(res.suggested_questions);
-                }
-            }, function() {
-                $('#opening-msg').text('설정 로드 실패');
-            });
+            // 1. 초기 파라미터 가져오기
+            try {
+                sdk.getParameters(function(res) {
+                    $('#opening-msg').text('연결됨');
+                    if (res.opening_statement) {
+                        appendMessage('AI', res.opening_statement, true);
+                    }
+                    if (res.suggested_questions) {
+                        showSuggestions(res.suggested_questions);
+                    }
+                }, function(err) {
+                    $('#opening-msg').text('설정 로드 실패 (API Key 확인 필요)');
+                });
+            } catch(e) { console.error(e); }
         });
 
-        function renderMarkdown(text) { return marked.parse(text); }
+        function renderMarkdown(text) { 
+            try { return marked.parse(text); } catch(e) { return text; }
+        }
 
         function appendMessage(sender, text, isAi) {
-            var id = 'msg-' + new Date().getTime();
+            var id = 'msg-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000);
             var $msg = $('<div class="mesg"></div>');
             $msg.append('<span class="' + (isAi ? 'ai' : 'user') + '">' + sender + '</span>');
             $msg.append('<div class="content" id="' + id + '">' + (isAi ? renderMarkdown(text) : text) + '</div>');
@@ -78,11 +82,11 @@
 
         function scrollBottom() {
             var cw = document.getElementById('chat-window');
-            cw.scrollTop = cw.scrollHeight;
+            if (cw) cw.scrollTop = cw.scrollHeight;
         }
 
         function showSuggestions(questions) {
-            $('.suggestion-box').remove(); // 기존 추천 삭제
+            $('.suggestion-box').remove();
             if (!questions || questions.length === 0) return;
 
             var $box = $('<div class="suggestion-box"></div>');
@@ -108,7 +112,7 @@
             $input.val('');
             $('#sendBtn').prop('disabled', true);
 
-            var aiMsgId = appendMessage('AI', '...', true);
+            var aiMsgId = appendMessage('AI', '생각 중...', true);
             var $aiContent = $('#' + aiMsgId);
             
             sdk.chatStream({
@@ -116,33 +120,34 @@
                 inputs: { "username": "주인님" },
                 onMessage: function(delta, full) {
                     $aiContent.html(renderMarkdown(full));
+                    scrollBottom();
                 },
                 onFinished: function(full, data) {
                     $('#sendBtn').prop('disabled', false);
                     
-                    // 2. 답변 전송 후 추천 질문(Suggested Questions) 가져오기
-                    if (data.message_id) {
+                    if (data && data.message_id) {
                         sdk.getSuggested(data.message_id, function(sugRes) {
-                            if (sugRes.data && sugRes.data.length > 0) {
+                            if (sugRes && sugRes.data && sugRes.data.length > 0) {
                                 showSuggestions(sugRes.data);
                             }
                         });
                     }
 
-                    // 참조 정보 표시
-                    if (data.metadata && data.metadata.retriever_resources) {
+                    if (data && data.metadata && data.metadata.retriever_resources) {
                         var html = '<div class="ref"><strong>참조:</strong><ul>';
                         $.each(data.metadata.retriever_resources, function(i, r) {
-                            html += '<li>' + (r.content || r.title).substring(0, 100) + '...</li>';
+                            html += '<li>' + (r.content || r.title || '출처').substring(0, 100) + '...</li>';
                         });
                         html += '</ul></div>';
                         $aiContent.closest('.mesg').append(html);
                     }
                     scrollBottom();
                 },
-                onError: function() {
+                onError: function(err) {
                     $('#sendBtn').prop('disabled', false);
-                    $aiContent.html('<span style="color:red;">Error</span>');
+                    var errMsg = (err && err.message) ? err.message : '네트워크 오류가 발생했습니다.';
+                    $aiContent.html('<span style="color:red;">오류: ' + errMsg + '</span>');
+                    console.error('SDK Error:', err);
                 }
             });
         }
@@ -151,8 +156,11 @@
             sdk.refresh();
             $('#chat-window').empty();
             appendMessage('시스템', '대화가 초기화되었습니다.', true);
-            // 초기 설정 재로드
-            $(document).ready();
+            // 초기 설정 재로드 시도
+            sdk.getParameters(function(res) {
+                if (res.opening_statement) appendMessage('AI', res.opening_statement, true);
+                if (res.suggested_questions) showSuggestions(res.suggested_questions);
+            });
         }
     </script>
 </body>
