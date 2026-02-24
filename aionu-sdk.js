@@ -2,7 +2,6 @@
  * AIONU JavaScript SDK
  * Supports IE11, Chrome, Edge
  * Features: Robust XHR Manual Streaming, Markdown Rendering, Parameters & Suggestions
- * (Fixed for Streaming Parse Robustness)
  */
 (function(window, $) {
     'use strict';
@@ -46,7 +45,7 @@
     };
 
     /**
-     * Enhanced Robust Streaming
+     * Advanced Robust XHR Streaming
      */
     AionUSDK.prototype.chatStream = function(params) {
         var self = this;
@@ -70,64 +69,66 @@
         xhr.setRequestHeader('Content-Type', 'application/json');
 
         xhr.onreadystatechange = function() {
-            // Early Error Check
+            // Check status for error handling
             if (xhr.readyState >= 2 && xhr.status >= 400) {
-                var errJson;
-                try { errJson = JSON.parse(xhr.responseText); } catch(e) { errJson = { message: xhr.statusText || '서버 응답 오류' }; }
-                if (params.onError) params.onError(errJson);
+                var errDetail = xhr.responseText;
+                try {
+                    var parsed = JSON.parse(xhr.responseText);
+                    errDetail = parsed.message || parsed.code || xhr.responseText;
+                } catch(e) {}
+                
+                if (params.onError) {
+                    params.onError({ status: xhr.status, message: errDetail });
+                }
+                xhr.onreadystatechange = null; // Prevent duplicate calls
                 xhr.abort();
                 return;
             }
 
             if (xhr.readyState === 3 || xhr.readyState === 4) {
                 var responseText = xhr.responseText;
+                if (!responseText) return;
+
                 var newData = responseText.substring(seenBytes);
                 seenBytes = responseText.length;
                 
                 lineBuffer += newData;
                 var lines = lineBuffer.split('\n');
-                lineBuffer = lines.pop(); // Last incomplete line
+                lineBuffer = lines.pop(); // Keep partial line
 
                 for (var i = 0; i < lines.length; i++) {
-                    var line = lines[i].replace(/^\s+|\s+$/g, '');
-                    if (!line) continue;
+                    var line = $.trim(lines[i]);
+                    if (!line || line.indexOf('data: ') !== 0) continue;
                     
-                    if (line.indexOf('data: ') === 0) {
-                        var jsonStr = line.substring(6);
-                        try {
-                            var data = JSON.parse(jsonStr);
-                            
-                            // Streaming Error
-                            if (data.event === 'error') {
-                                if (params.onError) params.onError(data);
-                                xhr.abort();
-                                break;
-                            }
-
-                            // Message Delta
-                            if (data.event === 'message' || data.event === 'agent_message') {
-                                var delta = data.answer || '';
-                                if (delta) {
-                                    fullAnswer += delta;
-                                    if (params.onMessage) params.onMessage(delta, fullAnswer, data);
-                                }
-                            } 
-                            
-                            // End
-                            if (data.event === 'message_end') {
-                                if (data.conversation_id) self.conversationId = data.conversation_id;
-                                if (params.onFinished) params.onFinished(fullAnswer, data);
-                            }
-                        } catch (e) {
-                            // Partial JSON, skip or wait next chunk
+                    var jsonStr = line.substring(6);
+                    try {
+                        var data = JSON.parse(jsonStr);
+                        
+                        if (data.event === 'error') {
+                            if (params.onError) params.onError(data);
+                            xhr.abort();
+                            return;
                         }
+
+                        if (data.event === 'message' || data.event === 'agent_message') {
+                            var delta = data.answer || '';
+                            fullAnswer += delta;
+                            if (params.onMessage) params.onMessage(delta, fullAnswer, data);
+                        } 
+                        
+                        if (data.event === 'message_end') {
+                            if (data.conversation_id) self.conversationId = data.conversation_id;
+                            if (params.onFinished) params.onFinished(fullAnswer, data);
+                        }
+                    } catch (e) {
+                        // Incomplete JSON chunk, skip
                     }
                 }
             }
         };
 
         xhr.onerror = function() {
-            if (params.onError) params.onError({ message: '네트워크 연결 오류 혹은 CORS 차단입니다. (로컬 서버 권장)' });
+            if (params.onError) params.onError({ message: '네트워크 연결 실패 (CORS 혹은 오프라인)' });
         };
 
         xhr.send(JSON.stringify(body));
