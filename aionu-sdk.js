@@ -63,6 +63,7 @@
         var seenBytes = 0;
         var fullAnswer = '';
         var lineBuffer = '';
+        var isFinished = false;
 
         xhr.open('POST', url, true);
         xhr.setRequestHeader('Authorization', 'Bearer ' + this.apiKey);
@@ -87,20 +88,31 @@
 
             if (xhr.readyState === 3 || xhr.readyState === 4) {
                 var responseText = xhr.responseText;
-                if (!responseText) return;
-
+                
                 var newData = responseText.substring(seenBytes);
                 seenBytes = responseText.length;
                 
                 lineBuffer += newData;
-                var lines = lineBuffer.split('\n');
-                lineBuffer = lines.pop(); // Keep partial line
+                // Fix: Handle mixed newlines (\r\n, \r, \n) for robust chunk processing
+                var lines = lineBuffer.split(/\r\n|\r|\n/);
+                
+                // If stream is done, process remaining buffer even if no newline
+                if (xhr.readyState === 4) {
+                    // Process all lines including potentially incomplete last line
+                } else {
+                    lineBuffer = lines.pop(); // Keep partial line
+                }
 
                 for (var i = 0; i < lines.length; i++) {
                     var line = $.trim(lines[i]);
-                    if (!line || line.indexOf('data: ') !== 0) continue;
+                    // Fix: Allow 'data:' without space and handle various formats
+                    if (!line || line.indexOf('data:') !== 0) continue;
                     
-                    var jsonStr = line.substring(6);
+                    var jsonStr = line.substring(5);
+                    if (jsonStr.length > 0 && jsonStr.charAt(0) === ' ') {
+                        jsonStr = jsonStr.substring(1);
+                    }
+
                     try {
                         var data = JSON.parse(jsonStr);
                         
@@ -117,12 +129,17 @@
                         } 
                         
                         if (data.event === 'message_end') {
+                            isFinished = true;
                             if (data.conversation_id) self.conversationId = data.conversation_id;
                             if (params.onFinished) params.onFinished(fullAnswer, data);
                         }
                     } catch (e) {
                         // Incomplete JSON chunk, skip
                     }
+                }
+                
+                if (xhr.readyState === 4 && !isFinished && xhr.status === 200) {
+                     if (params.onError) params.onError({ message: 'Stream ended unexpectedly (incomplete response)' });
                 }
             }
         };

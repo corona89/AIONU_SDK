@@ -71,9 +71,10 @@
         });
 
         function appendMessage(sender, text, isAi) {
-            var msgId = 'm-' + Math.random().toString(36).substr(2, 5);
+            var msgId = 'm-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+            var content = (isAi && window.marked) ? marked.parse(text) : text;
             var html = '<div class="mesg"><span class="' + (isAi?'ai-tag':'user-tag') + '">' + sender + '</span>';
-            html += '<div class="content" id="' + msgId + '">' + (isAi ? marked.parse(text) : text) + '</div></div>';
+            html += '<div class="content" id="' + msgId + '">' + content + '</div></div>';
             $('#chat-window').append(html);
             $('#chat-window').scrollTop($('#chat-window')[0].scrollHeight);
             return msgId;
@@ -106,7 +107,8 @@
             sdk.chatStream({
                 query: query,
                 onMessage: function(delta, full) {
-                    $aiDiv.html(marked.parse(full));
+                    var content = (window.marked) ? marked.parse(full) : full;
+                    $aiDiv.html(content);
                     $('#chat-window').scrollTop($('#chat-window')[0].scrollHeight);
                 },
                 onFinished: function(full, data) {
