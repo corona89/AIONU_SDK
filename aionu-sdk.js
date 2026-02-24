@@ -1,7 +1,7 @@
 /**
  * AIONU JavaScript SDK
  * Supports IE11, Chrome, Edge
- * Features: Manual XHR Streaming (POST support), Markdown Rendering
+ * Features: Manual XHR Streaming, Markdown Rendering, Parameters & Suggestions
  */
 (function(window, $) {
     'use strict';
@@ -13,6 +13,38 @@
     }
 
     /**
+     * Common Ajax Wrapper
+     */
+    AionUSDK.prototype._request = function(method, path, data, successCallback, errorCallback) {
+        $.ajax({
+            url: this.endpoint + path,
+            type: method,
+            headers: {
+                'Authorization': 'Bearer ' + this.apiKey,
+                'Content-Type': 'application/json'
+            },
+            data: data ? JSON.stringify(data) : null,
+            success: successCallback,
+            error: errorCallback
+        });
+    };
+
+    /**
+     * Get Application Parameters
+     */
+    AionUSDK.prototype.getParameters = function(successCallback, errorCallback) {
+        this._request('GET', '/parameters', null, successCallback, errorCallback);
+    };
+
+    /**
+     * Get Suggested Questions after a message
+     */
+    AionUSDK.prototype.getSuggested = function(messageId, successCallback, errorCallback) {
+        // Based on Dify/AIONU standard: GET /messages/{message_id}/suggested
+        this._request('GET', '/messages/' + messageId + '/suggested', null, successCallback, errorCallback);
+    };
+
+    /**
      * Refresh conversation (Reset ID)
      */
     AionUSDK.prototype.refresh = function() {
@@ -22,8 +54,6 @@
 
     /**
      * Send Message with Streaming (XHR Manual Implementation)
-     * Supports POST with Body and Headers in IE11+
-     * @param {Object} params - { query, inputs, user, onMessage, onFinished, onError }
      */
     AionUSDK.prototype.chatStream = function(params) {
         var self = this;
@@ -50,7 +80,6 @@
                 var newData = xhr.responseText.substring(seenBytes);
                 seenBytes = xhr.responseText.length;
 
-                // Process chunks
                 var lines = newData.split('\n');
                 $.each(lines, function(i, line) {
                     if (line.indexOf('data: ') === 0) {
@@ -68,22 +97,19 @@
                                 if (data.conversation_id) {
                                     self.conversationId = data.conversation_id;
                                 }
+                                if (params.onFinished) params.onFinished(fullAnswer, data);
                             }
 
                             if (data.event === 'error') {
                                 if (params.onError) params.onError(data);
                             }
-                        } catch (e) {
-                            // Chunk might be incomplete
-                        }
+                        } catch (e) { }
                     }
                 });
             }
 
             if (xhr.readyState === 4) {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    if (params.onFinished) params.onFinished(fullAnswer);
-                } else {
+                if (xhr.status < 200 || xhr.status >= 300) {
                     if (params.onError) params.onError({ status: xhr.status, message: xhr.responseText });
                 }
             }
@@ -94,11 +120,9 @@
         };
 
         xhr.send(JSON.stringify(body));
-
         return xhr;
     };
 
-    // Export to window
     window.AionUSDK = AionUSDK;
 
 })(window, jQuery);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIONU SDK 스트리밍 채팅 예제</title>
+    <title>AIONU SDK 고급 예제 (Parameters & Suggestions)</title>
     <style>
         body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
         #chat-window { border: 1px solid #ccc; height: 500px; overflow-y: scroll; padding: 10px; background: #fff; margin-bottom: 10px; }
@@ -12,66 +12,65 @@
         .user { color: blue; font-weight: bold; display: block; margin-bottom: 5px; }
         .ai { color: green; font-weight: bold; display: block; margin-bottom: 5px; }
         .content { line-height: 1.5; }
-        .content p { margin: 5px 0; }
-        .content pre { background: #272822; color: #f8f8f2; padding: 10px; overflow-x: auto; border-radius: 5px; font-size: 0.9em; }
-        .content code { background: #eee; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
         .ref { font-size: 0.85em; color: #666; background: #f9f9f9; padding: 8px; margin-top: 10px; border-left: 3px solid #ccc; }
+        .suggestion-box { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+        .suggestion-item { background: #e1f5fe; border: 1px solid #03a9f4; color: #01579b; padding: 5px 10px; border-radius: 15px; cursor: pointer; font-size: 0.9em; }
+        .suggestion-item:hover { background: #03a9f4; color: white; }
         .input-area { display: flex; gap: 5px; }
         input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; }
         button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 3px; }
-        button:disabled { background: #ccc; }
         .config-area { margin-bottom: 20px; padding: 10px; border: 1px dashed #aaa; background: #fff; }
     </style>
 </head>
 <body>
 
-    <h2>AIONU SDK 스트리밍 예제</h2>
+    <h2>AIONU SDK 고급 예제</h2>
 
     <div class="config-area">
-        <strong>설정:</strong>
-        Endpoint: <span id="conf-endpoint"></span> | 
-        <button onclick="refreshChat()">채팅 초기화 (Refresh)</button>
+        <strong>앱 설정 (Parameters):</strong>
+        <span id="opening-msg">로딩 중...</span>
+        <button onclick="refreshChat()">채팅 초기화</button>
     </div>
 
-    <div id="chat-window">
-        <!-- 대화 내용 출력 -->
-    </div>
+    <div id="chat-window"></div>
 
     <div class="input-area">
-        <input type="text" id="userInput" placeholder="메시지를 입력하세요 (Markdown 지원)..." onkeypress="if(event.keyCode==13) sendMessage()">
+        <input type="text" id="userInput" placeholder="질문을 입력하세요..." onkeypress="if(event.keyCode==13) sendMessage()">
         <button id="sendBtn" onclick="sendMessage()">전송</button>
     </div>
 
-    <!-- 1. Dependencies -->
     <script src="marked.min.js"></script>
     <script src="jquery-3.7.1.min.js"></script>
-    
-    <!-- 2. AIONU SDK -->
     <script src="aionu-sdk.js"></script>
 
     <script>
-        // SDK 초기화
         var sdk = new AionUSDK({
             endpoint: 'https://api.abclab.ktds.com/v1',
             apiKey: 'app-lH1oxhFjNCSxMv9Dsgxdhygh'
         });
 
         $(document).ready(function() {
-            $('#conf-endpoint').text(sdk.endpoint);
-            appendMessage('시스템', '준비되었습니다. 질문을 입력해 보세요.', true);
+            // 1. 초기 파라미터 가져오기 (Opening Statement & Initial Suggestions)
+            sdk.getParameters(function(res) {
+                $('#opening-msg').text('연결됨');
+                if (res.opening_statement) {
+                    appendMessage('AI', res.opening_statement, true);
+                }
+                if (res.suggested_questions) {
+                    showSuggestions(res.suggested_questions);
+                }
+            }, function() {
+                $('#opening-msg').text('설정 로드 실패');
+            });
         });
 
-        // 결과물 렌더링 함수 (Markdown 적용)
-        function renderMarkdown(text) {
-            return marked.parse(text);
-        }
+        function renderMarkdown(text) { return marked.parse(text); }
 
         function appendMessage(sender, text, isAi) {
             var id = 'msg-' + new Date().getTime();
             var $msg = $('<div class="mesg"></div>');
             $msg.append('<span class="' + (isAi ? 'ai' : 'user') + '">' + sender + '</span>');
             $msg.append('<div class="content" id="' + id + '">' + (isAi ? renderMarkdown(text) : text) + '</div>');
-            
             $('#chat-window').append($msg);
             scrollBottom();
             return id;
@@ -82,50 +81,68 @@
             cw.scrollTop = cw.scrollHeight;
         }
 
+        function showSuggestions(questions) {
+            $('.suggestion-box').remove(); // 기존 추천 삭제
+            if (!questions || questions.length === 0) return;
+
+            var $box = $('<div class="suggestion-box"></div>');
+            $.each(questions, function(i, q) {
+                var $item = $('<div class="suggestion-item"></div>').text(q);
+                $item.on('click', function() {
+                    $('#userInput').val(q);
+                    sendMessage();
+                });
+                $box.append($item);
+            });
+            $('#chat-window').append($box);
+            scrollBottom();
+        }
+
         function sendMessage() {
             var $input = $('#userInput');
-            var $btn = $('#sendBtn');
             var query = $input.val();
-            
-            if (!query || $btn.prop('disabled')) return;
+            if (!query || $('#sendBtn').prop('disabled')) return;
 
+            $('.suggestion-box').remove(); 
             appendMessage('나', query, false);
             $input.val('');
-            $btn.prop('disabled', true);
+            $('#sendBtn').prop('disabled', true);
 
-            // AI 메시지 자리를 미리 만들고 ID 확보
             var aiMsgId = appendMessage('AI', '...', true);
             var $aiContent = $('#' + aiMsgId);
-            var currentFullText = '';
-
-            // SDK 스트리밍 호출
+            
             sdk.chatStream({
                 query: query,
                 inputs: { "username": "주인님" },
-                user: "test-user",
                 onMessage: function(delta, full) {
-                    currentFullText = full;
-                    // 실시간 마크다운 렌더링
-                    $aiContent.html(renderMarkdown(currentFullText));
-                    scrollBottom();
+                    $aiContent.html(renderMarkdown(full));
                 },
                 onFinished: function(full, data) {
-                    $btn.prop('disabled', false);
+                    $('#sendBtn').prop('disabled', false);
                     
+                    // 2. 답변 전송 후 추천 질문(Suggested Questions) 가져오기
+                    if (data.message_id) {
+                        sdk.getSuggested(data.message_id, function(sugRes) {
+                            if (sugRes.data && sugRes.data.length > 0) {
+                                showSuggestions(sugRes.data);
+                            }
+                        });
+                    }
+
                     // 참조 정보 표시
-                    if (data.metadata && data.metadata.retriever_resources && data.metadata.retriever_resources.length > 0) {
-                        var html = '<div class="ref"><strong>참조 정보:</strong><ul>';
-                        $.each(data.metadata.retriever_resources, function(i, res) {
-                            html += '<li>' + (res.content || res.title || '출처').substring(0, 150) + '...</li>';
+                    if (data.metadata && data.metadata.retriever_resources) {
+                        var html = '<div class="ref"><strong>참조:</strong><ul>';
+                        $.each(data.metadata.retriever_resources, function(i, r) {
+                            html += '<li>' + (r.content || r.title).substring(0, 100) + '...</li>';
                         });
                         html += '</ul></div>';
                         $aiContent.closest('.mesg').append(html);
-                        scrollBottom();
                     }
+                    scrollBottom();
                 },
-                onError: function(err) {
-                    $btn.prop('disabled', false);
-                    $aiContent.html('<span style="color:red;">오류가 발생했습니다.</span>');
+                onError: function() {
+                    $('#sendBtn').prop('disabled', false);
+                    $aiContent.html('<span style="color:red;">Error</span>');
                 }
             });
         }
@@ -134,6 +151,8 @@
             sdk.refresh();
             $('#chat-window').empty();
             appendMessage('시스템', '대화가 초기화되었습니다.', true);
+            // 초기 설정 재로드
+            $(document).ready();
         }
     </script>
 </body>
